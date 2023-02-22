@@ -26,7 +26,7 @@ func New(url string) (*PartialZip, error) {
 
 	pz := &PartialZip{URL: url}
 
-	err := pz.init()
+	err := pz.Init()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to read http response body")
 	}
@@ -34,7 +34,7 @@ func New(url string) (*PartialZip, error) {
 	return pz, nil
 }
 
-func (p *PartialZip) init() error {
+func (p *PartialZip) Init() error {
 	var client http.Client
 	var chuck int64 = 1024
 	var offset int64 = -1
@@ -47,7 +47,7 @@ func (p *PartialZip) init() error {
 	resp, _ := client.Do(req)
 	p.Size = resp.ContentLength
 
-	for offset < 0 && chuck < (1000 * 1024) {
+	for offset < 0 && chuck < (1000*1024) {
 		//increase until we have enough to hold in the offset
 		chuck = 10 * chuck
 
