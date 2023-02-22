@@ -26,8 +26,8 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"github.com/blacktop/partialzip"
 	humanize "github.com/dustin/go-humanize"
+	"github.com/garet2gis/partialzip"
 	"github.com/spf13/cobra"
 )
 

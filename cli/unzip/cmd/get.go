@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/blacktop/partialzip"
+	"github.com/garet2gis/partialzip"
 	"github.com/spf13/cobra"
 )
 
