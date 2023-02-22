@@ -27,3 +27,5 @@ require (
 	golang.org/x/text v0.3.0 // indirect
 	gopkg.in/yaml.v2 v2.2.1 // indirect
 )
+
+replace github.com/heyleke/partialzip => github.com/garet2gis/partialzip
