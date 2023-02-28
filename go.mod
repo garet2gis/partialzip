@@ -28,4 +28,4 @@ require (
 	gopkg.in/yaml.v2 v2.2.1 // indirect
 )
 
-replace github.com/heyleke/partialzip => github.com/garet2gis/partialzip v0.2.3
+replace github.com/heyleke/partialzip => github.com/garet2gis/partialzip v0.2.4

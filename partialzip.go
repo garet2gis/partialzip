@@ -6,7 +6,6 @@ import (
 	"compress/flate"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"strings"
@@ -34,17 +33,23 @@ func New(url string) (*PartialZip, error) {
 	return pz, nil
 }
 
-func (p *PartialZip) Init() error {
+func (p *PartialZip) Init() (err error) {
 	var client http.Client
 	var chuck int64 = 1024
 	var offset int64 = -1
-	var err error
 	var end *directoryEnd
 	var r *bytes.Reader
 
 	// get remote zip size
-	req, _ := http.NewRequest("HEAD", p.URL, nil)
-	resp, _ := client.Do(req)
+	req, err := http.NewRequest("HEAD", p.URL, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
 	p.Size = resp.ContentLength
 
 	for offset < 0 && chuck < (1000*1024) {
@@ -53,15 +58,26 @@ func (p *PartialZip) Init() error {
 
 		// pull chuck from end of remote zip
 		reqRange := fmt.Sprintf("bytes=%d-%d", p.Size-chuck, p.Size)
-		req, _ = http.NewRequest("GET", p.URL, nil)
+		req, err = http.NewRequest("GET", p.URL, nil)
+		if err != nil {
+			return err
+		}
 		req.Header.Add("Range", reqRange)
-		resp, _ = client.Do(req)
-
-		body, err := ioutil.ReadAll(resp.Body)
+		resp, err = client.Do(req)
+		if err != nil {
+			return err
+		}
+		var body []byte
+		body, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return errors.Wrap(err, "failed to read http response body")
 		}
-		defer resp.Body.Close()
+		defer func() {
+			errClose := resp.Body.Close()
+			if errClose != nil {
+				err = errClose
+			}
+		}()
 
 		r = bytes.NewReader(body)
 
@@ -74,7 +90,7 @@ func (p *PartialZip) Init() error {
 		// z.r = r
 		p.Files = make([]*File, 0, end.directoryRecords)
 
-		offset = int64(chuck - (p.Size - int64(end.directoryOffset)))
+		offset = chuck - (p.Size - int64(end.directoryOffset))
 	}
 
 	// z.Comment = end.comment
@@ -134,13 +150,19 @@ func (p *PartialZip) Get(path string) (io.ReadCloser, error) {
 	for _, file := range p.Files {
 		// find path in zip directory
 		if strings.EqualFold(file.Name, path) {
-			req, _ := http.NewRequest("GET", p.URL, nil)
+			req, err := http.NewRequest("GET", p.URL, nil)
+			if err != nil {
+				return nil, err
+			}
 			end := uint64(file.headerOffset) + file.CompressedSize64 + padding
 			reqRange := fmt.Sprintf("bytes=%d-%d", file.headerOffset, end)
 			req.Header.Add("Range", reqRange)
-			resp, _ := client.Do(req)
+			resp, err := client.Do(req)
+			if err != nil {
+				return nil, err
+			}
 
-			body, err := ioutil.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to read http response body")
 			}
@@ -159,43 +181,63 @@ func (p *PartialZip) Get(path string) (io.ReadCloser, error) {
 
 // Download downloads a file from the remote zip.
 // It returns the number of bytes written and an error, if any.
-func (p *PartialZip) Download(path string) (int, error) {
+func (p *PartialZip) Download(path string) (n int, err error) {
 
 	var client http.Client
 	var padding uint64 = 1024
-	var n int
 
 	for _, file := range p.Files {
 		// find path in zip directory
 		if strings.EqualFold(file.Name, path) {
-			req, _ := http.NewRequest("GET", p.URL, nil)
+			var req *http.Request
+			req, err = http.NewRequest("GET", p.URL, nil)
+			if err != nil {
+				return 0, err
+			}
 			end := uint64(file.headerOffset) + file.CompressedSize64 + padding
 			reqRange := fmt.Sprintf("bytes=%d-%d", file.headerOffset, end)
 			req.Header.Add("Range", reqRange)
-			resp, _ := client.Do(req)
+			var resp *http.Response
+			resp, err = client.Do(req)
+			if err != nil {
+				return 0, err
+			}
 
-			body, err := ioutil.ReadAll(resp.Body)
+			var body []byte
+			body, err = io.ReadAll(resp.Body)
 			if err != nil {
 				return n, errors.Wrap(err, "failed to read http response body")
 			}
 
-			dataOffset, err := findBodyOffset(bytes.NewReader(body))
+			var dataOffset uint64
+			dataOffset, err = findBodyOffset(bytes.NewReader(body))
 			if err != nil {
 				return n, errors.Wrap(err, "failed to find data start offset in zip file header")
 			}
 
-			enflated, err := ioutil.ReadAll(flate.NewReader(bytes.NewReader(body[dataOffset : uint64(len(body))-padding+dataOffset])))
+			var enflated []byte
+			enflated, err = io.ReadAll(flate.NewReader(bytes.NewReader(body[dataOffset : uint64(len(body))-padding+dataOffset])))
 			if err != nil {
 				return n, errors.Wrap(err, "failed to flate decompress data")
 			}
 
-			of, err := os.Create(path)
-			defer of.Close()
+			of, errCreate := os.Create(path)
+			if errCreate != nil {
+				return 0, errCreate
+			}
+
+			defer func() {
+				errClose := of.Close()
+				if errClose != nil {
+					err = errClose
+				}
+			}()
 
 			n, err = of.Write(enflated)
 			if err != nil {
 				return n, errors.Wrap(err, "failed to write decompressed data to file")
 			}
+
 			return n, nil
 		}
 	}
